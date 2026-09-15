@@ -64,6 +64,10 @@ function createCircuitBreaker(options = {}) {
 
       probeInFlight = true;
       transition('HALF_OPEN');
+    } else if (state === 'HALF_OPEN') {
+      // A probe is already running; do not let concurrent traffic through.
+      metrics.short_circuited_total += 1;
+      throw new CircuitOpenError();
     }
 
     const isProbe = state === 'HALF_OPEN';
@@ -71,6 +75,7 @@ function createCircuitBreaker(options = {}) {
     try {
       const result = await fn();
       metrics.success_total += 1;
+      calls += 1;
 
       if (isProbe) {
         probeInFlight = false;
@@ -78,8 +83,6 @@ function createCircuitBreaker(options = {}) {
         calls = 0;
         failures = 0;
         transition('CLOSED');
-      } else {
-        calls += 1;
       }
 
       return result;
