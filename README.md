@@ -1,57 +1,27 @@
-# Starter — Circuit Breaker Proof Slice (PromptPilot)
+# PromptPilot — Circuit Breaker Proof Slice
 
-This is the starter repository for **Option B (provided scenario)** of the assignment.
+This PR implements **Option B: Circuit Breaker** for the PromptPilot model-provider call path.
 
-Repository: `https://github.com/kalviumcommunity/Production-Hardening-Proof-Slice-and-Review-Assignment` (public, owned by
-`kalviumcommunity`). Fork it, implement the breaker, and open a pull request back to your fork.
+## Risk addressed
+Prevents sustained model-provider failures from causing repeated doomed calls and spreading failures through the reply path.
 
-> The control here is a **circuit breaker**, covered earlier in this module. You are applying a
-> concept you have already learned, not a new one.
+## Chosen control
+A circuit breaker in `src/circuitBreaker.js`, already wired into `src/replyService.js`; it fails fast, then recovers through one probe.
 
-## Scenario
+## How to run / test
+Requires Node.js 18+. Run `node --test` (or `npm test`). Expected result: **6 tests pass, 0 fail**.
 
-PromptPilot drafts support replies by calling an external model provider. When the provider is slow
-or failing, every request still tries it, so doomed calls pile up and the failure spreads. You will
-add a **circuit breaker** so sustained failures short-circuit fast to a safe fallback, then recover
-through a probe.
+## Evidence
+The supplied tests prove minimum-request protection, threshold-based opening, dependency-free short-circuiting, successful recovery, failed-probe reopening, and state transitions.
 
-## Your task
+## Observability note
+`breaker_open_total` increments on every trip and `short_circuited_total` increments on rejected calls; `onStateChange(state)` exposes `OPEN`, `HALF_OPEN`, and `CLOSED` transitions without logging payloads or secrets.
 
-Implement the circuit breaker in [`src/circuitBreaker.js`](./src/circuitBreaker.js). The file has a
-skeleton and a `TODO`. The behaviour is fully specified by the supplied tests.
+## Trade-off
+During an outage, requests are deliberately rejected by the breaker and rely on PromptPilot's safe fallback instead of waiting on a failing provider.
 
-Prerequisite: Node.js 18 or newer (the tests use Node's built-in test runner). Then run:
+## Remaining risk
+The breaker is in-process, so state and metrics are not shared across multiple service instances; distributed deployments would need shared or aggregated observability and coordinated protection.
 
-```bash
-node --test
-```
-
-Make **all tests pass**. Do **not** modify the tests. The reply path in `src/replyService.js` is
-already wired to your breaker.
-
-The breaker must:
-
-- start `CLOSED` and count calls and failures;
-- move to `OPEN` when `failures / calls >= failureThreshold` **and** `calls >= minimumRequests`;
-- while `OPEN` and within `openMillis`, short-circuit (throw `CircuitOpenError` without calling the
-  dependency) and increment `metrics.short_circuited_total`;
-- after `openMillis` elapses (using the injected `now()`), allow one `HALF_OPEN` probe — success
-  closes it and resets counts, failure re-opens it;
-- increment `metrics.breaker_open_total` on every trip and call `onStateChange(state)` on every
-  transition.
-
-## What to submit
-
-Open a pull request on a branch named `production-hardening-slice`, and in your README include these
-labelled sections:
-
-1. **Risk addressed**
-2. **Chosen control**
-3. **How to run / test**
-4. **Evidence** (a reviewer can confirm it works without reading all your code)
-5. **Observability note** (which metric moves and which state changes are logged)
-6. **Trade-off**
-7. **Remaining risk**
-8. **How this production control protects my Modules 1–3 design**
-
-Submit the pull-request URL.
+## How this production control protects my Modules 1–3 design
+It protects the earlier PromptPilot decision to depend on an external model provider by containing provider failure and keeping the support-reply critical path available through the existing human-agent fallback.
